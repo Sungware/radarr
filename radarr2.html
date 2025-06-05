@@ -26,9 +26,24 @@
         border-radius: 5px;
         z-index: 1000;
       }
+      #startBtn {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 15px 30px;
+        font-size: 18px;
+        cursor: pointer;
+        border: none;
+        border-radius: 8px;
+        background-color: #4caf50;
+        color: white;
+        z-index: 2000;
+      }
     </style>
   </head>
   <body>
+    <button id="startBtn">Başlatmak için tıklayın</button>
     <div id="alert"></div>
     <div id="map"></div>
 
@@ -70,7 +85,7 @@
         maxZoom: 18,
         attribution:
           'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
-      }).addTo(map);
+      });
 
       // Radar işaretçilerini ekle
       markers.forEach((data) => {
@@ -79,16 +94,40 @@
 
       let lastAlertTime = 0; // Son ses uyarısı zamanı (milisaniye)
       const alertCooldown = 15000; // 15 saniye bekle (aynı uyarı için)
+      let userMarker = null; // Kullanıcı konum işaretçisi
+
+      // Başlat butonu ve ses izni
+      const startBtn = document.getElementById("startBtn");
+      startBtn.addEventListener("click", () => {
+        // Ses izni için sesi çal ve hemen durdur
+        alertSound.play().then(() => {
+          alertSound.pause();
+          alertSound.currentTime = 0;
+
+          // Butonu gizle, haritayı göster
+          startBtn.style.display = "none";
+          map.invalidateSize();
+
+          // Konum takibini başlat
+          map.locate({ setView: true, maxZoom: 16, watch: true });
+          map.on("locationfound", onLocationFound);
+          map.on("locationerror", onLocationError);
+        }).catch(() => {
+          alert("Ses çalma izni verilmedi. Lütfen butona basmayı deneyin.");
+        });
+      });
 
       // Kullanıcı konumunu alma ve radar ile mesafe kontrolü
       function onLocationFound(e) {
         const userLatLng = e.latlng;
 
-        // Kullanıcı işaretçisi
-        L.marker(userLatLng, { title: "Senin Konumun" })
-          .addTo(map)
-          .bindPopup("Buradasın")
-          .openPopup();
+        if (userMarker) {
+          userMarker.setLatLng(userLatLng);
+        } else {
+          userMarker = L.marker(userLatLng, { title: "Senin Konumun" })
+            .addTo(map)
+            .bindPopup("Buradasın");
+        }
 
         // Mesafe kontrolü (metre cinsinden)
         let alertShown = false;
@@ -135,11 +174,6 @@
         const alertDiv = document.getElementById("alert");
         alertDiv.style.display = "none";
       }
-
-      // Konum iste
-      map.locate({ setView: true, maxZoom: 16, watch: true });
-      map.on("locationfound", onLocationFound);
-      map.on("locationerror", onLocationError);
     </script>
   </body>
 </html>
