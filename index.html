@@ -1,107 +1,179 @@
-<!doctype html>
-<!--[if lte IE 9]>
-<html lang="en" class="oldie">
-<![endif]-->
-<!--[if gt IE 9]><!-->
-<html lang="en">
-<!--<![endif]-->
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Radar Yakınlık Uyarısı</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+    />
+    <style>
+      #map {
+        height: 90vh;
+        width: 100%;
+      }
+      #alert {
+        position: fixed;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #f44336;
+        color: white;
+        padding: 10px 20px;
+        font-weight: bold;
+        display: none;
+        border-radius: 5px;
+        z-index: 1000;
+      }
+      #startBtn {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 15px 30px;
+        font-size: 18px;
+        cursor: pointer;
+        border: none;
+        border-radius: 8px;
+        background-color: #4caf50;
+        color: white;
+        z-index: 2000;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="startBtn">Başlatmak için tıklayın</button>
+    <div id="alert"></div>
+    <div id="map"></div>
 
-<head>
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script>
+      // Radar noktaları JSON formatında
+      const markers = [
+        {
+          Aciklama:
+            "31019 / Laiklik Cad. Büyükkılıçlı SİLİVRİ Büyükkılıçlı-D100 istikametine",
+          lat: 41.16418,
+          lng: 28.189972,
+        },
+        {
+          Aciklama:
+            "12017 / Kennedy Cad. Ahırkapı FATİH  Kennedy Cad.-Sirkeci istikametine",
+          lat: 41.00399,
+          lng: 28.982493,
+        },
+        {
+          Aciklama:
+            "03004 / Eski Havaalanı Cad. BAKIRKÖY  Bakırköy-sahilyolu istikametine",
+          lat: 40.96419,
+          lng: 28.817257,
+        },
+      ];
 
-  <meta charset="utf-8">
-  <meta name='viewport' content='width=device-width, initial-scale=1'>
+      // Ses objesi (sayfa yüklendiğinde oluşturuyoruz)
+      const alertSound = new Audio(
+        "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
+      );
+      alertSound.volume = 0.5;
 
-  <meta name="csrf-param" content="authenticity_token" />
-<meta name="csrf-token" content="7feasW2v1WjEXvJcHrDH_X_HcXWWIUIYVgeCEnKIf1lQAqH0X7N5Mv558lIHEqLCWEty48cgnB8Zo2FbE3zd6w" />
+      // Harita ayarları
+      const map = L.map("map").setView([41.0, 28.8], 11);
 
-  
+      // OpenStreetMap katmanı
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18,
+        attribution:
+          'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+      });
 
-    <!--
-Copyright (c) 2025 by Uğur Eren (https://codepen.io/Uur-Eren-the-sans/pen/EajmyQJ)
+      // Radar işaretçilerini ekle
+      markers.forEach((data) => {
+        L.marker([data.lat, data.lng]).addTo(map).bindPopup(data.Aciklama);
+      });
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the &quot;Software&quot;), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+      let lastAlertTime = 0; // Son ses uyarısı zamanı (milisaniye)
+      const alertCooldown = 15000; // 15 saniye bekle (aynı uyarı için)
+      let userMarker = null; // Kullanıcı konum işaretçisi
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+      // Başlat butonu ve ses izni
+      const startBtn = document.getElementById("startBtn");
+      startBtn.addEventListener("click", () => {
+        // Ses izni için sesi çal ve hemen durdur
+        alertSound.play().then(() => {
+          alertSound.pause();
+          alertSound.currentTime = 0;
 
-THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+          // Butonu gizle, haritayı göster
+          startBtn.style.display = "none";
+          map.invalidateSize();
 
+          // Konum takibini başlat
+          map.locate({ setView: true, maxZoom: 16, watch: true });
+          map.on("locationfound", onLocationFound);
+          map.on("locationerror", onLocationError);
+        }).catch(() => {
+          alert("Ses çalma izni verilmedi. Lütfen butona basmayı deneyin.");
+        });
+      });
 
--->
+      // Kullanıcı konumunu alma ve radar ile mesafe kontrolü
+      function onLocationFound(e) {
+        const userLatLng = e.latlng;
 
+        if (userMarker) {
+          userMarker.setLatLng(userLatLng);
+        } else {
+          userMarker = L.marker(userLatLng, { title: "Senin Konumun" })
+            .addTo(map)
+            .bindPopup("Buradasın");
+        }
 
-  <title>Untitled</title>
+        // Mesafe kontrolü (metre cinsinden)
+        let alertShown = false;
+        markers.forEach((radar) => {
+          const radarLatLng = L.latLng(radar.lat, radar.lng);
+          const distance = userLatLng.distanceTo(radarLatLng);
+          if (distance <= 50000) {
+            // 50 km içinde ise uyar
+            showAlert(
+              `Dikkat! ${radar.Aciklama} radarına ${Math.round(
+                distance
+              )} metre yaklaştınız.`
+            );
+            alertShown = true;
 
-  <link rel="stylesheet" href="https://cpwebassets.codepen.io/assets/fullpage/fullpage-011d9e2d31f908bea5844278316cf5e26a2bd02c42e1d73309be721ce82ad5ce.css" />
-  <link rel="stylesheet" href="https://cpwebassets.codepen.io/assets/global/global-78ea36b1bd65a66c0ce07010e228f3e8d072d10b89848d1dd9d012b3c9f42629.css" media="all" />
-  <link rel="stylesheet" href="https://cpwebassets.codepen.io/assets/packs/css/everypage-2616bcd6.css" />
-  <link rel="stylesheet" href="https://cpwebassets.codepen.io/assets/page/page-f0d7b495e63e1bc150e9d461c0ba20300ce8893aeb3cbf80995b95271e4720ae.css" media="all" />
-  <link rel="stylesheet" href="https://cpwebassets.codepen.io/assets/editor/editor-74e9b05132d1286c2791b1bfde8ed3c2f6517e22230829453b1c02fc6fe88b04.css" media="all" />
+            // Sadece cooldown süresi geçtiyse sesi çal
+            const now = Date.now();
+            if (now - lastAlertTime > alertCooldown) {
+              alertSound.play().catch(() => {
+                // Eğer izin sorunu olursa sessiz kal
+              });
+              lastAlertTime = now;
+            }
+          }
+        });
 
-  
+        if (!alertShown) {
+          hideAlert();
+        }
+      }
 
-<style type="text/css">@font-face {font-family:Lato;font-style:normal;font-weight:400;src:url(/cf-fonts/s/lato/5.0.18/latin/400/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:Lato;font-style:normal;font-weight:400;src:url(/cf-fonts/s/lato/5.0.18/latin-ext/400/normal.woff2);unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20CF,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:Lato;font-style:normal;font-weight:700;src:url(/cf-fonts/s/lato/5.0.18/latin/700/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:Lato;font-style:normal;font-weight:700;src:url(/cf-fonts/s/lato/5.0.18/latin-ext/700/normal.woff2);unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20CF,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:Lato;font-style:normal;font-weight:900;src:url(/cf-fonts/s/lato/5.0.18/latin/900/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:Lato;font-style:normal;font-weight:900;src:url(/cf-fonts/s/lato/5.0.18/latin-ext/900/normal.woff2);unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20CF,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:Lato;font-style:italic;font-weight:400;src:url(/cf-fonts/s/lato/5.0.18/latin-ext/400/italic.woff2);unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20CF,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:Lato;font-style:italic;font-weight:400;src:url(/cf-fonts/s/lato/5.0.18/latin/400/italic.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:Lato;font-style:italic;font-weight:700;src:url(/cf-fonts/s/lato/5.0.18/latin-ext/700/italic.woff2);unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20CF,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:Lato;font-style:italic;font-weight:700;src:url(/cf-fonts/s/lato/5.0.18/latin/700/italic.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:Lato;font-style:italic;font-weight:900;src:url(/cf-fonts/s/lato/5.0.18/latin/900/italic.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:Lato;font-style:italic;font-weight:900;src:url(/cf-fonts/s/lato/5.0.18/latin-ext/900/italic.woff2);unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20CF,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}</style>
-      <meta name="twitter:title" content="Untitled">
-    <meta name="twitter:description" content="...">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:image" content="https://shots.codepen.io/username/pen/EajmyQJ-800.jpg?version=1749147926">
+      function onLocationError(e) {
+        alert("Konum bilgisi alınamadı. Lütfen konum izinlerini kontrol edin.");
+      }
 
+      // Uyarı gösterme fonksiyonları
+      function showAlert(msg) {
+        const alertDiv = document.getElementById("alert");
+        alertDiv.innerText = msg;
+        alertDiv.style.display = "block";
+      }
 
-    <meta property="og:image" content="https://shots.codepen.io/username/pen/EajmyQJ-800.jpg?version=1749147926" itemprop="thumbnailUrl">
-    <meta property="og:title" content="Untitled">
-    <meta property="og:url" content="https://codepen.io/Uur-Eren-the-sans/details/EajmyQJ">
-    <meta property="og:description" content="...">
-
-
-  <link rel="alternate" type="application/json+oembed"
-  href="https://codepen.io/api/oembed?url=https%3A%2F%2Fcodepen.io%2FUur-Eren-the-sans%2Fpen%2FEajmyQJ&format=json"
-  title="Untitled" />
-
-  
-
-    <link rel="apple-touch-icon" type="image/png" href="https://cpwebassets.codepen.io/assets/favicon/apple-touch-icon-5ae1a0698dcc2402e9712f7d01ed509a57814f994c660df9f7a952f3060705ee.png" />
-
-    <meta name="apple-mobile-web-app-title" content="CodePen">
-
-    <link rel="icon" type="image/x-icon" href="https://cpwebassets.codepen.io/assets/favicon/favicon-aec34940fbc1a6e787974dcd360f2c6b63348d4b1f4e06c77743096d55480f33.ico" />
-
-    <link rel="mask-icon" type="image/x-icon" href="https://cpwebassets.codepen.io/assets/favicon/logo-pin-b4b4269c16397ad2f0f7a01bcdf513a1994f4c94b8af2f191c09eb0d601762b1.svg" color="#111" />
-
-
-
-</head>
-
-<body class="fullpage logged-in">
-
-  <header id="main-header" class="main-header"></header>
-
-  <div class="oldie-header">
-    <a href="https://codepen.io/Uur-Eren-the-sans/pen/EajmyQJ?nocache=true&amp;view=pen">Edit Pen</a>
-  </div>
-
-  <div id="result-iframe-wrap" role="main">
-
-    <iframe
-      id="result"
-      src="https://codepen.io/Uur-Eren-the-sans/fullpage/EajmyQJ?nocache=true&amp;view=fullpage"
-      sandbox="allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-same-origin allow-scripts allow-top-navigation-by-user-activation" allow="accelerometer *; bluetooth *; camera *; clipboard-read *; clipboard-write *; display-capture *; encrypted-media *; geolocation *; gyroscope *; microphone *; midi *; serial *; web-share *; xr-spatial-tracking *" allowTransparency="true"
-      allowpaymentrequest="true" allowfullscreen="true" class="result-iframe" loading="lazy"></iframe>
-
-  </div>
-
-  <div id="pen-ad"></div>
-
-   <textarea id="init-data" style="display:none">{&quot;__browser&quot;:{&quot;country&quot;:&quot;TR&quot;,&quot;device&quot;:&quot;unknown_device&quot;,&quot;mobile&quot;:false,&quot;name&quot;:&quot;chrome&quot;,&quot;platform&quot;:&quot;pc&quot;,&quot;version&quot;:&quot;137&quot;},&quot;__constants&quot;:{},&quot;__CPDATA&quot;:{&quot;domain_iframe&quot;:&quot;https://cdpn.io&quot;,&quot;environment&quot;:&quot;production&quot;,&quot;host&quot;:&quot;codepen.io&quot;,&quot;iframe_allow&quot;:&quot;accelerometer *; bluetooth *; camera *; clipboard-read *; clipboard-write *; display-capture *; encrypted-media *; geolocation *; gyroscope *; microphone *; midi *; serial *; web-share *; xr-spatial-tracking *&quot;,&quot;iframe_sandbox&quot;:&quot;allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-same-origin allow-scripts allow-top-navigation-by-user-activation&quot;},&quot;__graphql&quot;:{&quot;data&quot;:{&quot;data&quot;:{&quot;sessionUser&quot;:{&quot;id&quot;:&quot;bWRvWE&quot;,&quot;name&quot;:&quot;Uğur Eren&quot;,&quot;title&quot;:&quot;Uğur Eren&quot;,&quot;avatar&quot;:&quot;https://assets.codepen.io/t-1/user-default-avatar.jpg?format=auto&amp;version=0&quot;,&quot;currentContext&quot;:{&quot;id&quot;:&quot;bWRvWE&quot;,&quot;title&quot;:&quot;Uğur Eren&quot;,&quot;name&quot;:&quot;Uğur Eren&quot;,&quot;avatar&quot;:&quot;https://assets.codepen.io/t-1/user-default-avatar.jpg?format=auto&amp;version=0&quot;,&quot;username&quot;:&quot;Uur-Eren-the-sans&quot;,&quot;__typename&quot;:&quot;User&quot;},&quot;currentTeamId&quot;:null,&quot;username&quot;:&quot;Uur-Eren-the-sans&quot;,&quot;admin&quot;:false,&quot;anon&quot;:false,&quot;pro&quot;:false,&quot;verified&quot;:true,&quot;featureFlags&quot;:[],&quot;teams&quot;:[],&quot;__typename&quot;:&quot;User&quot;}}},&quot;url&quot;:&quot;https://codepen.io/graphql&quot;,&quot;api&quot;:&quot;cprails&quot;},&quot;__user&quot;:{&quot;anon&quot;:false,&quot;base_url&quot;:&quot;/Uur-Eren-the-sans/&quot;,&quot;cohorts&quot;:[],&quot;current_team_hashid&quot;:null,&quot;current_team_id&quot;:0,&quot;hashid&quot;:&quot;bWRvWE&quot;,&quot;id&quot;:14719325,&quot;itemType&quot;:&quot;user&quot;,&quot;name&quot;:&quot;Uğur Eren&quot;,&quot;paid&quot;:false,&quot;tier&quot;:0,&quot;username&quot;:&quot;Uur-Eren-the-sans&quot;,&quot;created_at&quot;:&quot;2025-06-05T18:02:35.818Z&quot;,&quot;email_verified&quot;:true,&quot;collections_count&quot;:0,&quot;collections_private_count&quot;:0,&quot;followers_count&quot;:0,&quot;followings_count&quot;:0,&quot;pens_count&quot;:1,&quot;pens_private_count&quot;:0,&quot;projects_count&quot;:0,&quot;projects_private_count&quot;:0},&quot;__firebase&quot;:{&quot;config&quot;:{&quot;apiKey&quot;:&quot;AIzaSyBgLAe7N_MdFpuVofMkcQLGwwhUu5tuxls&quot;,&quot;authDomain&quot;:&quot;codepen-store-production.firebaseapp.com&quot;,&quot;databaseURL&quot;:&quot;https://codepen-store-production.firebaseio.com&quot;,&quot;disabled&quot;:false,&quot;projectId&quot;:&quot;codepen-store-production&quot;},&quot;token&quot;:&quot;eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJodHRwczovL2lkZW50aXR5dG9vbGtpdC5nb29nbGVhcGlzLmNvbS9nb29nbGUuaWRlbnRpdHkuaWRlbnRpdHl0b29sa2l0LnYxLklkZW50aXR5VG9vbGtpdCIsImNsYWltcyI6eyJvd25lcklkIjoiYldSdldFIiwiYWRtaW4iOmZhbHNlfSwiZXhwIjoxNzQ5MTU2NTAwLCJpYXQiOjE3NDkxNTI5MDAsImlzcyI6ImZpcmViYXNlLWFkbWluc2RrLThva3lsQGNvZGVwZW4tc3RvcmUtcHJvZHVjdGlvbi5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsInN1YiI6ImZpcmViYXNlLWFkbWluc2RrLThva3lsQGNvZGVwZW4tc3RvcmUtcHJvZHVjdGlvbi5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsInVpZCI6ImJXUnZXRSJ9.sFuk-OKaAHiDeLCHdsK0PPqM2KiymKXCEUaDFdGMUGlGAJOcGi7lZt11F-w7bUN3z5NpSbP4vjrzgfZaDdjXHSHkB_YlStzsKkc8h4beyz4-0Atjd2gK71O4azZeKiyHGmBGF2KvcCHoyv2Fh5UtKdAw_LjyZQ0GfLF3JyMLX4vCWC-zow4J83Dkkj2qsDwx90x_IRxw_kHviHmsjGDCX7p68ZHxLpv9mQ-g39WZYOHw5OMDWRL631kqJcIFuIzb2Rs38ide0FCrjIUzH34cxscFPhpdthRbx4FyiD2yJx_SYs9-LSmqlZK0IxynbjruQ3mrfzCLffOBs53ClZSQEQ&quot;},&quot;__pay_stripe_public_key&quot;:&quot;pk_live_2GndomDfiklqpSNQn8FrGuwZSMIMzha7DkLJqlYe7IR0ihKAlKdiHg68JJc5eVPt68rzAjzAAVXcUwjySHRCsgjQQ00gtRBUFNH&quot;,&quot;__pay_braintree_env&quot;:&quot;production&quot;,&quot;__item&quot;:&quot;{\&quot;id\&quot;:82268039,\&quot;hashid\&quot;:\&quot;EajmyQJ\&quot;,\&quot;itemType\&quot;:\&quot;pen\&quot;,\&quot;user_id\&quot;:14719325,\&quot;slug_hash\&quot;:\&quot;EajmyQJ\&quot;,\&quot;private\&quot;:false,\&quot;slug_hash_private\&quot;:\&quot;13bab689293a62a6f48ec173de84a9a7\&quot;}&quot;,&quot;__profiled&quot;:{&quot;base_url&quot;:&quot;/Uur-Eren-the-sans&quot;,&quot;hashid&quot;:&quot;bWRvWE&quot;,&quot;id&quot;:14719325,&quot;name&quot;:&quot;Uğur Eren&quot;,&quot;type&quot;:&quot;user&quot;,&quot;username&quot;:&quot;Uur-Eren-the-sans&quot;},&quot;__pageType&quot;:&quot;full&quot;}</textarea>
-
-  <div id="popup-overlay" class="overlay popup-overlay"></div>
-  <div id="modal-overlay" class="overlay modal-overlay"></div>
-
-  <script src="https://cpwebassets.codepen.io/assets/common/everypage-c0439686246cf4a1465a9bf7bcc4b0a7a720b9724e1e14b3aa3bec47880049c4.js"></script>
-
-
-  <script src="https://cpwebassets.codepen.io/assets/packs/js/vendor-77134fec76436eb893d3.chunk.js"></script>
-<script src="https://cpwebassets.codepen.io/assets/packs/js/3-cdce7379b017daf6c6c1.chunk.js"></script>
-<script src="https://cpwebassets.codepen.io/assets/packs/js/everypage-12772157570b5ba34206.js"></script>
-  <script src="https://cpwebassets.codepen.io/assets/editor/full/full_page_renderer-5c5f4d03e4aca2a97df9e03dfc8ed9d048628ec94b84fe63e060b0276d8862f7.js"></script>
-</body>
-
+      function hideAlert() {
+        const alertDiv = document.getElementById("alert");
+        alertDiv.style.display = "none";
+      }
+    </script>
+  </body>
 </html>
