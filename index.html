@@ -1,179 +1,175 @@
 <!DOCTYPE html>
 <html lang="tr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Radar Yakınlık Uyarısı</title>
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
-    />
-    <style>
-      #map {
-        height: 90vh;
-        width: 100%;
-        display: none; /* Başta gizli */
-      }
-      #alert {
-        position: fixed;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #f44336;
-        color: white;
-        padding: 10px 20px;
-        font-weight: bold;
-        display: none;
-        border-radius: 5px;
-        z-index: 1000;
-      }
-      #startBtn {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        padding: 15px 30px;
-        font-size: 18px;
-        cursor: pointer;
-        background-color: #2196f3;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        z-index: 1001;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="alert"></div>
-    <button id="startBtn">Uygulamayı Başlat</button>
-    <div id="map"></div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radar Yakınlık Uyarısı</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+  />
+  <style>
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+    }
+    #map {
+      height: 90vh;
+      width: 100%;
+      display: none; /* Başlangıçta gizli */
+    }
+    #alert {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #f44336;
+      color: white;
+      padding: 10px 20px;
+      font-weight: bold;
+      display: none;
+      border-radius: 5px;
+      z-index: 1000;
+    }
+    #startBtn {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 15px 30px;
+      font-size: 18px;
+      cursor: pointer;
+      background-color: #2196f3;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      z-index: 1001;
+    }
+  </style>
+</head>
+<body>
 
-    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-    <script>
-      const markers = [
-        {
-          Aciklama:
-            "31019 / Laiklik Cad. Büyükkılıçlı SİLİVRİ Büyükkılıçlı-D100 istikametine",
-          lat: 41.16418,
-          lng: 28.189972,
-        },
-        {
-          Aciklama:
-            "12017 / Kennedy Cad. Ahırkapı FATİH  Kennedy Cad.-Sirkeci istikametine",
-          lat: 41.00399,
-          lng: 28.982493,
-        },
-        {
-          Aciklama:
-            "03004 / Eski Havaalanı Cad. BAKIRKÖY  Bakırköy-sahilyolu istikametine",
-          lat: 40.96419,
-          lng: 28.817257,
-        },
-      ];
+<div id="alert"></div>
+<button id="startBtn">Uygulamayı Başlat</button>
+<div id="map"></div>
 
-      const alertSound = new Audio(
-        "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
-      );
-      alertSound.volume = 0.5;
-      alertSound.preload = "auto";
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script>
+  const markers = [
+    {
+      Aciklama:
+        "31019 / Laiklik Cad. Büyükkılıçlı SİLİVRİ Büyükkılıçlı-D100 istikametine",
+      lat: 41.16418,
+      lng: 28.189972,
+    },
+    {
+      Aciklama:
+        "12017 / Kennedy Cad. Ahırkapı FATİH  Kennedy Cad.-Sirkeci istikametine",
+      lat: 41.00399,
+      lng: 28.982493,
+    },
+    {
+      Aciklama:
+        "03004 / Eski Havaalanı Cad. BAKIRKÖY  Bakırköy-sahilyolu istikametine",
+      lat: 40.96419,
+      lng: 28.817257,
+    },
+  ];
 
-      const map = L.map("map").setView([41.0, 28.8], 11);
+  // Ses objesi başta oluşturuluyor
+  const alertSound = new Audio(
+    "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
+  );
+  alertSound.volume = 0.5;
+  alertSound.preload = "auto";
+
+  let map; // Harita objesi
+  let lastAlertTime = 0;
+  const alertCooldown = 15000;
+
+  // Uyarı kutusu
+  function showAlert(msg) {
+    const alertDiv = document.getElementById("alert");
+    alertDiv.innerText = msg;
+    alertDiv.style.display = "block";
+  }
+  function hideAlert() {
+    const alertDiv = document.getElementById("alert");
+    alertDiv.style.display = "none";
+  }
+
+  // Konum bulunduğunda
+  function onLocationFound(e) {
+    const userLatLng = e.latlng;
+
+    L.marker(userLatLng, { title: "Senin Konumun" })
+      .addTo(map)
+      .bindPopup("Buradasın")
+      .openPopup();
+
+    let alertShown = false;
+    markers.forEach((radar) => {
+      const radarLatLng = L.latLng(radar.lat, radar.lng);
+      const distance = userLatLng.distanceTo(radarLatLng);
+      if (distance <= 50000) {
+        showAlert(
+          `Dikkat! ${radar.Aciklama} radarına ${Math.round(distance)} metre yaklaştınız.`
+        );
+        alertShown = true;
+
+        const now = Date.now();
+        if (now - lastAlertTime > alertCooldown) {
+          alertSound.play().catch(() => {
+            // Eğer izin sorunu varsa sessiz kal
+          });
+          lastAlertTime = now;
+        }
+      }
+    });
+
+    if (!alertShown) {
+      hideAlert();
+    }
+  }
+
+  // Konum alınamazsa
+  function onLocationError(e) {
+    alert("Konum bilgisi alınamadı. Lütfen konum izinlerini kontrol edin.");
+  }
+
+  // Başlat butonu
+  const startBtn = document.getElementById("startBtn");
+  startBtn.addEventListener("click", () => {
+    // Ses izni için kullanıcı etkileşimi
+    alertSound.play().then(() => {
+      alertSound.pause();
+      alertSound.currentTime = 0;
+
+      // Haritayı göster
+      document.getElementById("map").style.display = "block";
+      startBtn.style.display = "none";
+
+      // Harita oluştur (bir kere!)
+      map = L.map("map").setView([41.0, 28.8], 11);
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18,
         attribution:
           'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
-      });
+      }).addTo(map);
 
       markers.forEach((data) => {
-        L.marker([data.lat, data.lng]).bindPopup(data.Aciklama);
+        L.marker([data.lat, data.lng]).addTo(map).bindPopup(data.Aciklama);
       });
 
-      let lastAlertTime = 0;
-      const alertCooldown = 15000;
+      // Konum takibini başlat
+      map.locate({ setView: true, maxZoom: 16, watch: true });
+      map.on("locationfound", onLocationFound);
+      map.on("locationerror", onLocationError);
 
-      function onLocationFound(e) {
-        const userLatLng = e.latlng;
-
-        L.marker(userLatLng, { title: "Senin Konumun" })
-          .addTo(map)
-          .bindPopup("Buradasın")
-          .openPopup();
-
-        let alertShown = false;
-        markers.forEach((radar) => {
-          const radarLatLng = L.latLng(radar.lat, radar.lng);
-          const distance = userLatLng.distanceTo(radarLatLng);
-          if (distance <= 50000) {
-            showAlert(
-              `Dikkat! ${radar.Aciklama} radarına ${Math.round(distance)} metre yaklaştınız.`
-            );
-            alertShown = true;
-
-            const now = Date.now();
-            if (now - lastAlertTime > alertCooldown) {
-              alertSound.play().catch(() => {
-                // İzin sorunu varsa sessiz kal
-              });
-              lastAlertTime = now;
-            }
-          }
-        });
-
-        if (!alertShown) {
-          hideAlert();
-        }
-      }
-
-      function onLocationError(e) {
-        alert("Konum bilgisi alınamadı. Lütfen konum izinlerini kontrol edin.");
-      }
-
-      function showAlert(msg) {
-        const alertDiv = document.getElementById("alert");
-        alertDiv.innerText = msg;
-        alertDiv.style.display = "block";
-      }
-
-      function hideAlert() {
-        const alertDiv = document.getElementById("alert");
-        alertDiv.style.display = "none";
-      }
-
-      // Başlat butonu ve mobilde ses için izin aşma
-      const startBtn = document.getElementById("startBtn");
-      startBtn.addEventListener("click", () => {
-        // Ses izni için önce sessiz oynat
-        alertSound.volume = 0;
-        alertSound.play().then(() => {
-          alertSound.pause();
-          alertSound.currentTime = 0;
-          alertSound.volume = 0.5;
-
-          // Haritayı göster ve butonu gizle
-          document.getElementById("map").style.display = "block";
-          startBtn.style.display = "none";
-
-          // TileLayer'ı ekle (sonradan eklenmesi gerekiyor harita görünmesi için)
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            maxZoom: 18,
-            attribution:
-              'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
-          }).addTo(map);
-
-          // Radar işaretçilerini ekle haritaya
-          markers.forEach((data) => {
-            L.marker([data.lat, data.lng]).addTo(map).bindPopup(data.Aciklama);
-          });
-
-          // Konum takibini başlat
-          map.locate({ setView: true, maxZoom: 16, watch: true });
-          map.on("locationfound", onLocationFound);
-          map.on("locationerror", onLocationError);
-        }).catch(() => {
-          alert("Ses çalma izni verilmedi. Lütfen butona basmayı deneyin.");
-        });
-      });
-    </script>
-  </body>
+    }).catch(() => {
+      alert("Ses çalma izni verilmedi. Lütfen butona basmayı deneyin.");
+    });
+  });
+</script>
+</body>
 </html>
